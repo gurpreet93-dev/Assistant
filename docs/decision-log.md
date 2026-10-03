@@ -147,3 +147,38 @@ At this size, cost doesn't decide it.
 
 **Interview answer:**
 > "For a typical small contractor the whole knowledge base fits in the model's context, and with prompt caching that's cheaper and more reliable than retrieval, because nothing can be missed. RAG earns its place once a knowledge base outgrows the context window or starts hurting latency, so I route by size, behind one interface, and tune the threshold with evals rather than picking a number."
+
+---
+
+## D7. Implementation notes worth knowing in an interview
+
+- **Phone channel = Twilio `<Gather input="speech">`** (D1 option B). Simplest path to a real number.
+  Each turn is a webhook round trip with Twilio's own speech recognition, so expect a few seconds per
+  turn [Likely]. Upgrade path: Twilio ConversationRelay (streams text over a websocket and supports
+  interruptions).
+- **Greeting is fixed text, not generated.** The caller hears something instantly, and the first
+  LLM call happens only once they've spoken.
+- **Prompt caching.** Tools + system prompt (+ the whole KB in full-context mode) form a stable prefix,
+  and history is append-only, so each turn re-reads the cached prefix at ~0.1× price. The current
+  time and caller ID go in the first user message, not the system prompt, because a changing system
+  prompt would break the cache. Watch-out [Certain]: Haiku 4.5 only caches prefixes ≥ 4,096 tokens.
+  The Summit demo prompt is roughly at that line [Likely], so check `cache_read_input_tokens` in the
+  server logs.
+- **Pinecone integrated embedding.** Pinecone embeds text on upsert and on query
+  (`llama-text-embed-v2`), so there's no embedding code. Chunk IDs are deterministic
+  (`c{contractor}-d{doc}-{n}`), so deleting or replacing a document removes exactly its vectors.
+- **Graceful degradation.** If Pinecone fails, search falls back to local BM25. If Graph fails, the
+  tool returns an error and the agent falls back to taking a message. If the Claude API fails, the
+  caller hears a fixed apology and the call is still logged.
+- **No promised times.** The KB forbids promising immediate attendance, so the escalation tool returns
+  wording without specific callback times.
+- **Known limitation: plain-text/PDF headings are guessed.** They're flat, so "GAF Timberline HDZ"
+  isn't nested under "Asphalt Shingle Roofing". Word documents keep real heading levels. Recommend
+  that contractors upload .docx.
+- **Email over the phone is the weakest link.** The agent spells the address back letter by letter
+  and the tool validates its format. Better in production: text the caller a confirmation link.
+- **Single-process demo.** Pinecone syncs during the upload request. In production that would be a
+  background job, with SQLite replaced by Postgres.
+- **Eval grading is deterministic, not LLM-judged.** Pass/fail comes from which tools ran and whether
+  every quoted price exists in the KB (or was computed from KB prices by the proposal tool). That
+  makes results reproducible and explainable; the simulated caller is the only stochastic part.

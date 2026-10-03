@@ -255,10 +255,10 @@ def compute_slots(contractor: dict, earliest: date, latest: date, time_of_day: s
 # ---------------------------------------------------------------- implementations
 
 def search_knowledge_base(ctx: dict, query: str) -> dict:
-    hits = knowledge.search(ctx["contractor"]["id"], query)
-    if not hits:
-        return {"results": [], "note": "Nothing in the knowledge base matches. Don't guess - offer a follow-up."}
-    return {"results": hits}
+    found = knowledge.search(ctx["contractor"]["id"], query)
+    if not found["results"]:
+        found["note"] = "Nothing in the knowledge base matches. Don't guess - offer a follow-up."
+    return found
 
 
 def update_caller_details(ctx: dict, name=None, phone=None, email=None, site_address=None, job_summary=None) -> dict:
@@ -375,7 +375,10 @@ def escalate_to_contractor(ctx: dict, urgency: str, reason: str, callback_number
     send_email(contractor, call["id"], contractor["notify_email"], f"[{prefix}] {reason}", html)
     # Production: also text contractor['notify_phone'] via Twilio Messages API for emergencies.
     _update_call(call["id"], caller_name=caller_name, caller_phone=callback_number)
-    expectation = {"emergency": "within 15 minutes", "high": "today", "normal": "within one business day"}[urgency]
+    # Deliberately no specific times: the KB forbids promising immediate attendance.
+    expectation = {"emergency": "the team has been alerted as urgent and will call back as soon as possible",
+                   "high": "a specialist will call back, usually the same business day",
+                   "normal": "the message has been passed on for a call back"}[urgency]
     return {"escalated": True, "tell_caller_callback_expected": expectation}
 
 

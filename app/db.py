@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY,
     contractor_id INTEGER NOT NULL REFERENCES contractors(id),
     filename TEXT NOT NULL,
-    content TEXT NOT NULL,
+    content TEXT NOT NULL,                 -- normalised text (markdown-style headings)
+    token_estimate INTEGER NOT NULL,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS chunks (
@@ -36,7 +37,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     contractor_id INTEGER NOT NULL,
     idx INTEGER NOT NULL,
-    text TEXT NOT NULL
+    uid TEXT UNIQUE NOT NULL,              -- record id in Pinecone: c{contractor}-d{doc}-{idx}
+    section TEXT NOT NULL,                 -- heading path, e.g. 'Roof Repairs'
+    text TEXT NOT NULL,                    -- includes the contextual header
+    synced INTEGER NOT NULL DEFAULT 0      -- 1 once upserted to Pinecone
 );
 CREATE TABLE IF NOT EXISTS calls (
     id INTEGER PRIMARY KEY,

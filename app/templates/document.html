@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}{{ doc.filename }}{% endblock %}
+{% block content %}
+<h1>{{ doc.filename }}</h1>
+<p class="muted small">{{ "{:,}".format(doc.token_estimate) }} tokens · {{ chunks|length }} chunks · <a href="/knowledge">← back</a></p>
+{% for c in chunks %}<div class="card"><div class="small muted">Chunk {{ c.idx }} · {{ c.uid }} · {% if c.synced %}<span class="pill ok">in Pinecone</span>{% else %}<span class="pill">local only</span>{% endif %}</div><pre>{{ c.text }}</pre></div>{% endfor %}
+{% endblock %}
