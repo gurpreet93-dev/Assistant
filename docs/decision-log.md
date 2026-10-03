@@ -37,7 +37,7 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 
 ## D2. Vector database: Pinecone (Starter, free)
 
-**Decision:** Pinecone on the free Starter plan. One index, **one namespace per contractor**. Embeddings come from Pinecone's hosted `llama-text-embed-v2`.
+**Decision:** Pinecone on the free Starter plan. One index, **one namespace per contractor**. Used only when a contractor's knowledge base is too large to load whole into the prompt (see D6). Embeddings come from Pinecone's hosted `llama-text-embed-v2`.
 
 **Considered:**
 - **Chroma.** Free, runs locally inside the app, no account needed. It reads as a prototype, and tenant isolation is only a filter applied in code.
@@ -83,6 +83,8 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 
 ## D4. Chunking strategy
 
+*Applies only to the retrieval path (large knowledge bases, see D6). Small knowledge bases are loaded whole and need no chunking.*
+
 **Decision:**
 - Split at headings first.
 - Pack whole paragraphs up to about 800 characters.
@@ -104,3 +106,44 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 | Send a proposal | Restricted | Prices only from the knowledge base, labelled "preliminary", contractor copied |
 | Emergency (active leak, safety) | Escalate immediately | The cost of a missed emergency is far higher than the cost of a false alarm |
 | Discounts, complaints, commercial jobs | Human only | Brand and legal risk |
+
+---
+
+## D6. Load the whole knowledge base vs retrieve chunks (RAG)
+
+**Decision:** Route by knowledge-base size.
+- **Small** (under a threshold, initially ~30k tokens; tune it with the scenario evaluation): put the whole knowledge base in the system prompt and use prompt caching. No chunking, no vector search.
+- **Large:** chunk, embed and retrieve through Pinecone (D2, D4).
+
+Both paths sit behind the same interface, so the agent doesn't know which one ran.
+
+**Facts:** [Certain, Anthropic model table and prompt-caching docs]
+- Haiku 4.5 has a **200K-token** context window.
+- Cache reads cost about **0.1×** the input price. Cache writes cost **1.25×** with the 5-minute expiry.
+- Haiku 4.5 only caches a prompt prefix of **4,096 tokens or more**. A shorter prefix silently doesn't cache.
+
+**Cost at small size:** an 8k-token knowledge base plus about 3k of instructions and tool definitions, over a 12-turn call [Likely]:
+
+| Approach | Cost per call |
+|---|---|
+| Whole KB, no caching | ~$0.13 |
+| Whole KB, with caching | ~$0.03 |
+| RAG | about the same as caching |
+
+At this size, cost doesn't decide it.
+
+**Why load the whole knowledge base when it's small:**
+- **No retrieval misses.** RAG's most common failure is the right chunk never being retrieved, so the model answers "I don't know" or guesses. With the whole knowledge base in context, that failure can't happen.
+- **Better answers that combine documents**, e.g. a price from the price list plus a condition from the warranty page.
+- **Less to build, run and debug.**
+
+**Why retrieve when it's large:**
+- **The hard limit:** a fabricator's product catalogues and spec sheets can exceed 200K tokens.
+- **Quality:** a large, mostly irrelevant context dilutes attention, and accuracy drops [Likely].
+- **Latency:** time to first token grows with prompt length [Likely]. On a voice call, every extra second shows.
+- **Cost:** it grows with knowledge-base size × number of turns, even with caching.
+
+**How to demo it:** a contractor with 3 short documents runs on the full-context path. Upload a large product catalogue and that contractor switches to Pinecone. The dashboard shows which path served each call.
+
+**Interview answer:**
+> "For a typical small contractor the whole knowledge base fits in the model's context, and with prompt caching that's cheaper and more reliable than retrieval, because nothing can be missed. RAG earns its place once a knowledge base outgrows the context window or starts hurting latency, so I route by size, behind one interface, and tune the threshold with evals rather than picking a number."
