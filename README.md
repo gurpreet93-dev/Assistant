@@ -95,12 +95,15 @@ existing in the KB, and a clean close. Results go to `evals/results-<timestamp>.
 ## Chunking experiment
 
 ```bash
-python -m scripts.chunking_experiment              # local keyword search
-python -m scripts.chunking_experiment --pinecone   # semantic search on Pinecone
+python -m scripts.chunking_experiment                       # local keyword search
+python -m scripts.chunking_experiment --backend pinecone    # semantic search (also: hybrid, --rerank)
 ```
 
-Compares chunking strategies on `evals/retrieval_questions.json` (recall@3). Set `CHUNK_MAX_CHARS`
-in `.env` to the winner.
+Compares the strategies in `evals/chunking_strategies.json` (method, size, overlap, context label) on
+`evals/retrieval_questions.json`, and writes a report with every chunk and what each question retrieved
+to `evals/chunking/<timestamp>/`. Set `CHUNK_METHOD` / `CHUNK_MAX_CHARS` / `CHUNK_OVERLAP` /
+`CHUNK_CONTEXT` in `.env` to the winner. Guide: [`docs/chunking-playbook.md`](docs/chunking-playbook.md).
+Also try strategies live in the app: **Knowledge base → open a document → Chunking preview**.
 
 ## Tests
 

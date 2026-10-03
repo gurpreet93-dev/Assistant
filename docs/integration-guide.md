@@ -91,7 +91,7 @@ is the usual free region [Verify in the console's "create index" screen].
 
 **3.3 Run the chunking experiment with real semantic search**
 ```powershell
-python -m scripts.chunking_experiment --pinecone
+python -m scripts.chunking_experiment --backend pinecone
 ```
 This creates the index `call-agent-kb` on first use (it takes a minute), runs each strategy in a
 temporary namespace, and deletes the namespaces afterwards. Record the table in
@@ -214,7 +214,7 @@ privilege is a senior-PM answer.
 - [ ] `.env` filled in; `/health` all green for what you'll demo.
 - [ ] Prices in `sample_kb/summit-price-list-DEMO.xlsx` replaced or clearly labelled as demo.
 - [ ] Latest eval results file saved, and you know your one best failure story.
-- [ ] Chunking experiment re-run with `--pinecone`, table recorded in the decision log.
+- [ ] Chunking experiment re-run with `--backend pinecone`, table recorded in the decision log.
 - [ ] Twilio upgraded or interviewer flow planned; tested a call from a second phone.
 - [ ] Backup plan if the Wi-Fi or ngrok fails: the browser **Test call** on localhost, plus a
       2-minute screen recording of a phone call made the day before.

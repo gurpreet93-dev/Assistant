@@ -114,9 +114,11 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 **Conclusions:**
 1. That's the argument for semantic search (Pinecone) or hybrid search.
 2. For small KBs, full-context mode (D6) sidesteps retrieval entirely.
-3. Chunking choices only start to matter at retrieval-mode sizes, so the experiment needs re-running with `--pinecone` and a larger document before claiming a winner.
+3. Chunking choices only start to matter at retrieval-mode sizes, so the experiment needs re-running with `--backend pinecone` and a larger document before claiming a winner.
 
-**TODO:** run `--pinecone` and record the results here.
+**Second run** (keyword search, 32 questions, 3 documents including a Word handbook; 9 strategies covering method, size, overlap and labels): sentence-600 scored 81% recall@3 and the others 75–78%. That spread is within noise. Full table, observations and next experiments: `docs/chunking-playbook.md` §5.
+
+**TODO:** run `--backend pinecone`, then `hybrid` and `--rerank`, per the playbook's experiment plan, and record a decision here.
 
 ---
 

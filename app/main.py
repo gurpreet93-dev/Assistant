@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import accounts, agent, knowledge, voice
+from app import accounts, agent, chunking, knowledge, voice
 from app.accounts import DEFAULT_HOURS
 from app.config import settings
 from app.db import get_db, init_db, row_to_dict
@@ -160,12 +160,24 @@ def delete_doc(request: Request, doc_id: int, me: dict = Depends(current_contrac
 
 @app.get("/knowledge/{doc_id}")
 def view_doc(request: Request, doc_id: int, me: dict = Depends(current_contractor)):
+    """Stored chunks, or a live preview of any chunking strategy (?method=&size=&overlap=&context=)."""
     with get_db() as db:
         doc = db.execute("SELECT * FROM documents WHERE id=? AND contractor_id=?", (doc_id, me["id"])).fetchone()
         if not doc:
             raise HTTPException(404)
-        chunks = [dict(r) for r in db.execute("SELECT * FROM chunks WHERE document_id=? ORDER BY idx", (doc_id,))]
-    return render(request, "document.html", me, doc=dict(doc), chunks=chunks)
+        stored = [dict(r) for r in db.execute("SELECT * FROM chunks WHERE document_id=? ORDER BY idx", (doc_id,))]
+    q = request.query_params
+    preview, cfg, error = None, chunking.config_from_env(), None
+    if q.get("method"):
+        try:
+            cfg = chunking.ChunkConfig(method=q["method"], max_chars=int(q.get("size") or 800),
+                                       overlap=int(q.get("overlap") or 0),
+                                       context=q.get("context") if q.get("context") in ("none", "path") else "path")
+            preview = chunking.chunk(doc["content"], doc["filename"], cfg)
+        except ValueError as exc:
+            error = str(exc)
+    return render(request, "document.html", me, doc=dict(doc), chunks=stored, preview=preview, cfg=cfg,
+                  error=error, methods=chunking.METHODS)
 
 
 @app.get("/knowledge-search")

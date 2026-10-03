@@ -5,7 +5,8 @@ from pathlib import Path
 import docx
 from openpyxl import Workbook
 
-from app import knowledge, vectorstore
+from app import chunking, knowledge, vectorstore
+from app.chunking import ChunkConfig
 from app.config import settings
 
 SAMPLE = Path(__file__).resolve().parent.parent / "sample_kb"
@@ -21,7 +22,7 @@ def test_plain_text_headings_detected():
 
 def test_chunks_carry_contextual_header_and_never_split_lines():
     text = "# Price List\n" + "\n".join(f"- Item {i}: some long description of the item; Price: {i * 10}" for i in range(40))
-    chunks = knowledge.chunk_text(text, "prices.xlsx", max_chars=400)
+    chunks = knowledge.chunk_text(text, "prices.xlsx", ChunkConfig(max_chars=400))
     assert len(chunks) > 1
     for c in chunks:
         assert c["text"].startswith("[prices.xlsx > Price List]")

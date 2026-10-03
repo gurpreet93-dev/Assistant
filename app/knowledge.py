@@ -11,18 +11,16 @@ If Pinecone isn't configured or fails, retrieval falls back to local BM25 keywor
 """
 import io
 import logging
-import os
 import math
 import re
 from collections import Counter
 
-from app import vectorstore
+from app import chunking, vectorstore
 from app.config import settings
 from app.db import get_db, now_iso
 
 log = logging.getLogger(__name__)
 
-CHUNK_CHARS = int(os.getenv("CHUNK_MAX_CHARS", "800"))  # chosen via scripts/chunking_experiment.py
 SUPPORTED = (".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv")
 STOPWORDS = set(
     "a an and are as at be by do does for from has have how i in is it its me my of on or "
@@ -124,42 +122,10 @@ def _mark_plain_headings(text: str) -> str:
 
 # ---------------------------------------------------------------- chunking (decision log D4)
 
-def chunk_text(text: str, source: str, max_chars: int = CHUNK_CHARS, contextual_header: bool = True) -> list[dict]:
-    """Split at headings, pack whole lines up to max_chars (a line - a price row, a bullet -
-    is never split), and prefix each chunk with '[source > heading path]' so it still makes
-    sense on its own after retrieval."""
-    sections: list[tuple[str, list[str]]] = []
-    stack: list[tuple[int, str]] = []
-    current: list[str] = []
-
-    def flush():
-        if any(ln.strip() for ln in current):
-            sections.append((" > ".join(h for _, h in stack), [ln for ln in current if ln.strip()]))
-
-    for line in text.splitlines():
-        m = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m:
-            flush()
-            current = []
-            level = len(m.group(1))
-            stack = [(lvl, h) for lvl, h in stack if lvl < level] + [(level, m.group(2).strip())]
-        else:
-            current.append(line)
-    flush()
-
-    chunks = []
-    for path, lines in sections:
-        header = f"[{source}{' > ' + path if path else ''}]" if contextual_header else ""
-        body = ""
-        for line in lines:
-            if body and len(header) + len(body) + len(line) + 2 > max_chars:
-                chunks.append({"section": path, "text": f"{header}\n{body}".strip()})
-                body = line
-            else:
-                body = f"{body}\n{line}" if body else line
-        if body:
-            chunks.append({"section": path, "text": f"{header}\n{body}".strip()})
-    return chunks
+def chunk_text(text: str, source: str, cfg: chunking.ChunkConfig | None = None) -> list[dict]:
+    """Strategy comes from .env (CHUNK_METHOD / CHUNK_MAX_CHARS / CHUNK_OVERLAP / CHUNK_CONTEXT)
+    unless a config is passed. See app/chunking.py."""
+    return chunking.chunk(text, source, cfg)
 
 
 def estimate_tokens(text: str) -> int:
