@@ -11,6 +11,7 @@ If Pinecone isn't configured or fails, retrieval falls back to local BM25 keywor
 """
 import io
 import logging
+import os
 import math
 import re
 from collections import Counter
@@ -21,7 +22,7 @@ from app.db import get_db, now_iso
 
 log = logging.getLogger(__name__)
 
-CHUNK_CHARS = 800
+CHUNK_CHARS = int(os.getenv("CHUNK_MAX_CHARS", "800"))  # chosen via scripts/chunking_experiment.py
 SUPPORTED = (".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv")
 STOPWORDS = set(
     "a an and are as at be by do does for from has have how i in is it its me my of on or "
@@ -123,7 +124,7 @@ def _mark_plain_headings(text: str) -> str:
 
 # ---------------------------------------------------------------- chunking (decision log D4)
 
-def chunk_text(text: str, source: str, max_chars: int = CHUNK_CHARS) -> list[dict]:
+def chunk_text(text: str, source: str, max_chars: int = CHUNK_CHARS, contextual_header: bool = True) -> list[dict]:
     """Split at headings, pack whole lines up to max_chars (a line - a price row, a bullet -
     is never split), and prefix each chunk with '[source > heading path]' so it still makes
     sense on its own after retrieval."""
@@ -148,16 +149,16 @@ def chunk_text(text: str, source: str, max_chars: int = CHUNK_CHARS) -> list[dic
 
     chunks = []
     for path, lines in sections:
-        header = f"[{source}{' > ' + path if path else ''}]"
+        header = f"[{source}{' > ' + path if path else ''}]" if contextual_header else ""
         body = ""
         for line in lines:
             if body and len(header) + len(body) + len(line) + 2 > max_chars:
-                chunks.append({"section": path, "text": f"{header}\n{body}"})
+                chunks.append({"section": path, "text": f"{header}\n{body}".strip()})
                 body = line
             else:
                 body = f"{body}\n{line}" if body else line
         if body:
-            chunks.append({"section": path, "text": f"{header}\n{body}"})
+            chunks.append({"section": path, "text": f"{header}\n{body}".strip()})
     return chunks
 
 
@@ -275,24 +276,31 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in STOPWORDS]
 
 
-def bm25_search(contractor_id: int, query: str, k: int = 4) -> list[dict]:
-    """Keyword ranking (BM25, k1=1.5, b=0.75). Fallback when Pinecone is unavailable,
-    and strong on exact product names where embeddings are weak."""
-    with get_db() as db:
-        rows = db.execute("SELECT c.uid, c.text, d.filename FROM chunks c JOIN documents d ON d.id=c.document_id "
-                          "WHERE c.contractor_id=?", (contractor_id,)).fetchall()
-    if not rows:
+def bm25_rank(query: str, texts: list[str]) -> list[tuple[int, float]]:
+    """BM25 (k1=1.5, b=0.75) over arbitrary texts. Returns (index, score) best-first, score > 0 only."""
+    docs = [_tokenize(t) for t in texts]
+    if not docs:
         return []
-    docs = [_tokenize(r["text"]) for r in rows]
     n, avgdl = len(docs), (sum(len(d) for d in docs) / len(docs)) or 1
     df = Counter(term for d in docs for term in set(d))
     scored = []
-    for row, doc in zip(rows, docs):
+    for i, doc in enumerate(docs):
         tf, score = Counter(doc), 0.0
         for term in _tokenize(query):
             if term in tf:
                 idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
                 score += idf * tf[term] * 2.5 / (tf[term] + 1.5 * (0.25 + 0.75 * len(doc) / avgdl))
         if score > 0:
-            scored.append({"id": row["uid"], "source": row["filename"], "text": row["text"], "score": round(score, 2)})
-    return sorted(scored, key=lambda r: r["score"], reverse=True)[:k]
+            scored.append((i, round(score, 2)))
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+def bm25_search(contractor_id: int, query: str, k: int = 4) -> list[dict]:
+    """Keyword search over this contractor's chunks. Fallback when Pinecone is unavailable,
+    and strong on exact product names where embeddings are weak."""
+    with get_db() as db:
+        rows = db.execute("SELECT c.uid, c.text, d.filename FROM chunks c JOIN documents d ON d.id=c.document_id "
+                          "WHERE c.contractor_id=?", (contractor_id,)).fetchall()
+    ranked = bm25_rank(query, [r["text"] for r in rows])[:k]
+    return [{"id": rows[i]["uid"], "source": rows[i]["filename"], "text": rows[i]["text"], "score": score}
+            for i, score in ranked]

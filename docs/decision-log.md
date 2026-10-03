@@ -53,7 +53,11 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 - Starter is free, with no monthly minimum.
 - The paid plans are Builder at $20/mo flat, Standard at a $50/mo minimum, and Enterprise at a $500/mo minimum.
 
-**Not checked:** about 5M free embedding tokens per month on Starter (a third-party source says so) [Likely].
+**Starter limits** [Certain, Pinecone console, 2026-10-03]: 1M read units/month, 2M write units/month, 2 GB storage, 1 GB egress, up to 5 serverless indexes, **up to 100 namespaces per index**, 2 organisation members. Not available on Starter: dedicated read nodes, roles and permissions (RBAC), backups, and access to all clouds and regions.
+
+**What the namespace cap means:** one namespace per contractor allows 100 contractors per index (500 across 5 indexes) on the free plan. Past that, either pay for a higher plan or move to one shared namespace with a `contractor_id` metadata filter. That trade-off swaps structural isolation for scale, which makes it a good interview question to raise yourself.
+
+**Not checked:** about 5M free embedding tokens per month on Starter (a third-party source says so) [Likely]. Integrated embedding usage may be metered separately from read/write units; check the usage page after the first upload.
 
 **Correction to the original reasoning:** a vector DB does *not* reduce LLM cost. The LLM still runs on every turn of the call. Retrieval only decides which text goes into the prompt. The cost lever is model choice (D3).
 
@@ -93,7 +97,26 @@ Managed speech costs roughly a cent or two per minute [Guessing]. That's a small
 
 **Why not a fixed 500-character split** (the approach in Pinecone's quickstart): it cuts a price row in half, separating "Metal roofing, standing seam" from "$1,150 per square". Then neither chunk answers "how much is a metal roof?"
 
-**How it's validated:** recall@3 on 10 scripted caller questions (does the correct chunk appear in the top 3 results?). Target 9/10. If exact product names or SKUs miss, add Pinecone's full-text (BM25) field for hybrid search.
+**How it's validated:** `scripts/chunking_experiment.py` compares five strategies on `evals/retrieval_questions.json`, scoring recall@3 (does a correct chunk appear in the top 3 results?).
+
+**First result** (local keyword search, 2026-10-03, 12 questions, 1.7K-token KB):
+
+| Strategy | recall@3 | Chunks |
+|---|---|---|
+| fixed-500 (baseline) | 9/12 | 14 |
+| headings-400 | 8/12 | 26 |
+| headings-800 | 9/12 | 18 |
+| headings-1200 | 9/12 | 16 |
+| headings-800, no header | 9/12 | 17 |
+
+**What it showed:** on a KB this small, chunking strategy made no measurable difference. Every miss was a vocabulary mismatch ("Saturdays" vs "Saturday", "cost" vs "Price", "travel" vs "service area… 40 miles"), which keyword search can't bridge.
+
+**Conclusions:**
+1. That's the argument for semantic search (Pinecone) or hybrid search.
+2. For small KBs, full-context mode (D6) sidesteps retrieval entirely.
+3. Chunking choices only start to matter at retrieval-mode sizes, so the experiment needs re-running with `--pinecone` and a larger document before claiming a winner.
+
+**TODO:** run `--pinecone` and record the results here.
 
 ---
 

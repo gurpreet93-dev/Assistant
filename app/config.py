@@ -1,6 +1,10 @@
 import os
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env from the working directory; real environment variables win
+
 
 @dataclass(frozen=True)
 class Settings:

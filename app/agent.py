@@ -14,7 +14,7 @@ import anthropic
 from app import knowledge
 from app.config import settings
 from app.db import get_db, now_iso, row_to_dict
-from app.tools import TOOLS, run_tool
+from app.tools import TOOLS, run_tool, spoken_time
 
 log = logging.getLogger(__name__)
 
@@ -144,7 +144,8 @@ def handle_turn(external_id: str, utterance: str) -> dict:
     _log(call["id"], "caller", utterance)
 
     if not messages:
-        local_now = datetime.now(ZoneInfo(contractor["timezone"])).strftime("%A %B %-d %Y, %-I:%M %p")
+        now = datetime.now(ZoneInfo(contractor["timezone"]))
+        local_now = f"{spoken_time(now)}, {now.year}"
         utterance = (f"[Call connected {local_now} business time. Caller ID: {call['caller_number'] or 'unknown'}. "
                      f'You already greeted the caller with: "{greeting(contractor)}"]\n\n{utterance}')
     if messages and messages[-1]["role"] == "user":  # previous turn ended on tool results

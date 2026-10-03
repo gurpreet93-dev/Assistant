@@ -1,0 +1,14 @@
+[
+  {"q": "Are you open on Saturdays?", "must_contain": ["Saturday"]},
+  {"q": "How much do you charge to replace gutters?", "must_contain": ["gutter replacement", "per linear foot"]},
+  {"q": "What does an inspection cost?", "must_contain": ["Standard roof inspection", "199"]},
+  {"q": "Do you install Timberline shingles?", "must_contain": ["Timberline"]},
+  {"q": "Water is dripping from my ceiling, what do you need from me?", "must_contain": ["active water entry"]},
+  {"q": "How long does a roof inspection take?", "must_contain": ["45"]},
+  {"q": "Can you give me a price for a metal roof?", "must_contain": ["metal", "inspection"]},
+  {"q": "Do you work on flat roofs for businesses?", "must_contain": ["commercial"]},
+  {"q": "How far do you travel?", "must_contain": ["40 miles"]},
+  {"q": "Is tax included in your prices?", "must_contain": ["HST"]},
+  {"q": "What does it cost to come out after hours for a leak?", "must_contain": ["after hours", "349"]},
+  {"q": "Do you replace the rubber boot around a plumbing vent?", "must_contain": ["Pipe boot"]}
+]

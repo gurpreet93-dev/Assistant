@@ -6,6 +6,7 @@ uploads their own documents; callers phone in; the agent answers questions from 
 estimate, or escalate an emergency to the contractor.
 
 Product decisions and trade-offs: [`docs/decision-log.md`](docs/decision-log.md).
+Step-by-step setup of Claude, Pinecone, ngrok, Twilio and Outlook: [`docs/integration-guide.md`](docs/integration-guide.md).
 
 ```
 Caller ─► Twilio number ─► /voice/* webhooks ──────┐
@@ -37,8 +38,7 @@ Browser "test call" (mic + speaker) ─► /api/sim/* ─┤
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env            # add ANTHROPIC_API_KEY (required); others optional
-set -a; source .env; set +a
+cp .env.example .env            # add ANTHROPIC_API_KEY (required); others optional; loaded automatically
 python -m app.seed              # demo contractor: demo@summit.test / demo1234 + sample KB
 uvicorn app.main:app --reload
 ```
@@ -91,6 +91,16 @@ python -m scripts.run_scenarios emergency-leak     # one
 A second Haiku instance plays each caller persona (`evals/scenarios.json`). Each call is checked for
 the expected action, no forbidden actions (e.g. no proposal for metal roofs), every quoted price
 existing in the KB, and a clean close. Results go to `evals/results-<timestamp>.md`. A few cents per run.
+
+## Chunking experiment
+
+```bash
+python -m scripts.chunking_experiment              # local keyword search
+python -m scripts.chunking_experiment --pinecone   # semantic search on Pinecone
+```
+
+Compares chunking strategies on `evals/retrieval_questions.json` (recall@3). Set `CHUNK_MAX_CHARS`
+in `.env` to the winner.
 
 ## Tests
 

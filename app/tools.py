@@ -182,6 +182,12 @@ TOOLS = [
 
 # ---------------------------------------------------------------- helpers
 
+def spoken_time(dt: datetime) -> str:
+    """'Wednesday October 7 at 9:30 AM'. Built by hand: strftime's %-d / %-I are Linux-only."""
+    hour = dt.hour % 12 or 12
+    return f"{dt:%A %B} {dt.day} at {hour}:{dt:%M %p}"
+
+
 def _tz(contractor: dict) -> ZoneInfo:
     return ZoneInfo(contractor["timezone"])
 
@@ -243,7 +249,7 @@ def compute_slots(contractor: dict, earliest: date, latest: date, time_of_day: s
                            or (time_of_day == "afternoon" and cursor.hour >= 12))
                 free = all(end <= b_start or cursor >= b_end for b_start, b_end in busy)
                 if in_part and free and cursor >= now + MIN_LEAD_TIME:
-                    slots.append({"start": cursor.isoformat(), "label": cursor.strftime("%A %B %-d at %-I:%M %p")})
+                    slots.append({"start": cursor.isoformat(), "label": spoken_time(cursor)})
                     per_day += 1
                     cursor = end + timedelta(minutes=30)  # spread offers out across the day
                 else:
@@ -309,7 +315,7 @@ def book_site_visit(ctx: dict, start: str, customer_name: str, customer_email: s
                  caller_phone=customer_phone, site_address=site_address, job_summary=job_summary)
     return {
         "booked": True,
-        "when": local.strftime("%A %B %-d at %-I:%M %p"),
+        "when": spoken_time(local),
         "invites_sent_to": [customer_email, contractor["notify_email"]],
         "calendar": event["provider"],
     }
