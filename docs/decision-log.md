@@ -1,0 +1,106 @@
+# Decision Log
+
+Each entry records what was decided, what else was considered, and the answer to give if asked about it in an interview.
+
+Confidence tags: **[Certain]** = checked against a primary source; **[Likely]** = strong inference; **[Guessing]** = check before quoting.
+
+---
+
+## D1. Speech-to-text / text-to-speech: managed vs self-hosted
+
+**Decision:** Build a browser voice demo first (Chrome Web Speech API). Then add a real phone line with Twilio's built-in speech. Do **not** self-host speech models.
+
+**Key point:** Twilio is mainly the *phone line*: it owns the number and connects it to the telephone network. Local code can't receive a phone call. Self-hosting replaces only the speech layer, not the phone line.
+
+| Option | Phone line | STT / TTS | Cost | Build effort | Demo value |
+|---|---|---|---|---|---|
+| A. Browser "call" | None | Chrome Web Speech API | Free | ~1 day | Good over screen-share; not a real call |
+| B. Twilio end-to-end | Twilio number | Twilio built-in speech | A few cents per call [Guessing] | ~1 day | Strong: the interviewer dials a real number |
+| C. Twilio line + local speech | Twilio streams raw call audio | faster-whisper + Piper or Kokoro | Saves the speech fees; still pays Twilio per minute | Weeks | Same as B for the caller |
+
+**Why not C:** the models aren't the hard part. The hard part is the real-time audio work around them:
+- **Turn detection:** knowing when the caller has finished speaking (voice-activity detection, VAD).
+- **Barge-in:** stopping playback when the caller interrupts.
+- **Phone audio quality:** narrowband 8 kHz audio lowers transcription accuracy [Likely].
+- **Latency:** transcription, then the LLM, then voice generation, stacked one after another. Probably 2–3 s on a CPU before tuning [Guessing].
+
+Managed speech costs roughly a cent or two per minute [Guessing]. That's a small saving compared with weeks of engineering plus ongoing operations.
+
+**Caveat:** the Chrome Web Speech API is free to the developer, but Chrome sends the audio to Google's servers [Likely]. It is not truly local.
+
+**When to revisit:** speech becomes a large share of the cost per call at scale, a data-residency or privacy requirement forbids third-party audio processing, or a target market has poor managed-speech accuracy (accents, languages).
+
+**Interview answer:**
+> "I evaluated self-hosting speech-to-text and text-to-speech with Whisper and Piper. At pilot volume, managed speech costs about a cent per minute, while self-hosting adds weeks of real-time audio work (turn detection, interruptions, latency) plus ops burden. I'd revisit at a scale where speech becomes a large share of the cost per call, or if data-residency requirements forced it."
+
+---
+
+## D2. Vector database: Pinecone (Starter, free)
+
+**Decision:** Pinecone on the free Starter plan. One index, **one namespace per contractor**. Embeddings come from Pinecone's hosted `llama-text-embed-v2`.
+
+**Considered:**
+- **Chroma.** Free, runs locally inside the app, no account needed. It reads as a prototype, and tenant isolation is only a filter applied in code.
+- **pgvector.** The best long-term fit if tenant data lives in Postgres (transactions, joins). It's more setup for a demo.
+- **Keyword-only BM25 search** (a standard keyword-ranking method). No embeddings needed and strong on exact terms, but it misses paraphrases ("my roof is leaking" vs "leak repair").
+
+**Why Pinecone:**
+- **Tenant isolation by design.** A query can't cross a namespace. That's stronger than "we filter on contractor_id", which depends on every query remembering the filter.
+- **Managed service.** A small team doesn't run search infrastructure.
+- **Hosted embeddings.** No embedding model to run on our side.
+
+**Facts checked:** [Certain, pinecone.io/pricing, checked 2026-10-03]
+- Starter is free, with no monthly minimum.
+- The paid plans are Builder at $20/mo flat, Standard at a $50/mo minimum, and Enterprise at a $500/mo minimum.
+
+**Not checked:** about 5M free embedding tokens per month on Starter (a third-party source says so) [Likely].
+
+**Correction to the original reasoning:** a vector DB does *not* reduce LLM cost. The LLM still runs on every turn of the call. Retrieval only decides which text goes into the prompt. The cost lever is model choice (D3).
+
+**Risks and how they're handled:**
+- **Vendor and pricing risk:** Pinecone has raised paid-plan minimums before [Likely]. Retrieval sits behind a single `search()` function, so the provider can be swapped in an afternoon.
+- **Network latency:** every lookup on a live call is a round trip to Pinecone. Measure it.
+- **Indexing delay:** Pinecone indexes upserted records asynchronously [Certain, Pinecone docs]. A document uploaded seconds before a test call may not be searchable yet.
+
+**Interview answer:**
+> "I chose Pinecone with a namespace per contractor so tenant isolation is structural rather than a filter someone can forget. Retrieval sits behind one interface, so if pricing or latency became a problem I could move to pgvector without touching the agent."
+
+---
+
+## D3. LLM: Claude Haiku 4.5
+
+**Decision:** Claude Haiku 4.5 (`claude-haiku-4-5`) for the call agent.
+
+**Why:**
+- **Cost.** [Certain, Anthropic model table cached 2026-09-25] Haiku 4.5 costs $1 per million input tokens and $5 per million output. Claude Opus 5.5 costs $4/$20 and Sonnet 5.5 costs $2/$10.
+- **Latency.** On a phone call, response time matters more than deep reasoning. The agent's job is narrow: search the knowledge base, pick an action, collect details.
+
+**Estimate:** about 12 turns and ~60k input tokens per 5-minute call, so about 6–8 cents per call on Haiku, and less with prompt caching [Likely]. Measure the real number from API usage logs once calls run.
+
+**When to revisit:** if the scenario evaluation shows the wrong action being chosen on complex calls, try Sonnet 5.5 on those turns only.
+
+---
+
+## D4. Chunking strategy
+
+**Decision:**
+- Split at headings first.
+- Pack whole paragraphs up to about 800 characters.
+- Never split a table row.
+- Start every chunk with its document name and section heading (a "contextual chunk header"), e.g. `[Price List > Metal Roofing]`.
+
+**Why not a fixed 500-character split** (the approach in Pinecone's quickstart): it cuts a price row in half, separating "Metal roofing, standing seam" from "$1,150 per square". Then neither chunk answers "how much is a metal roof?"
+
+**How it's validated:** recall@3 on 10 scripted caller questions (does the correct chunk appear in the top 3 results?). Target 9/10. If exact product names or SKUs miss, add Pinecone's full-text (BM25) field for hybrid search.
+
+---
+
+## D5. Agent autonomy rules (by how reversible each action is and how costly a mistake would be)
+
+| Action | Autonomy | Reasoning |
+|---|---|---|
+| Answer from the knowledge base | Full | Low risk if grounded in documents; says "I'll check" when it isn't |
+| Book a site visit | Full | Reversible; the contractor gets the invite and can move it |
+| Send a proposal | Restricted | Prices only from the knowledge base, labelled "preliminary", contractor copied |
+| Emergency (active leak, safety) | Escalate immediately | The cost of a missed emergency is far higher than the cost of a false alarm |
+| Discounts, complaints, commercial jobs | Human only | Brand and legal risk |
